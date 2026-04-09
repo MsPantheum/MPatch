@@ -44,6 +44,9 @@ jar {
                 'Alice-Extension': 'alice.mpatch.Loader',
         )
     }
+
+    exclude("net/**")
+    exclude("cpw/**")
 }
 
 java {
