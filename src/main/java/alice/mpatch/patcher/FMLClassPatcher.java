@@ -1,5 +1,6 @@
 package alice.mpatch.patcher;
 
+import alice.log.Logger;
 import alice.mpatch.Environment;
 import alice.util.ReflectionUtil;
 import alice.util.Unsafe;
@@ -18,13 +19,13 @@ public class FMLClassPatcher {
     private static MethodHandle applyPatch;
 
     public static void setFmlDeobfuscatingTransformer(IClassNameTransformer transformer) {
-        System.out.println("Get FML_DEOBFUSCATING_TRANSFORMER.");
+        Logger.MAIN.info("Get FML_DEOBFUSCATING_TRANSFORMER.");
         FML_DEOBFUSCATING_TRANSFORMER = transformer;
         assert FML_DEOBFUSCATING_TRANSFORMER instanceof IClassTransformer;
     }
 
     public static void startPatching() {
-        System.out.println("FML patching starts.");
+        Logger.MAIN.info("FML patching starts.");
         Class<?> cls;
         try {
             cls = Launch.classLoader.findClass(Environment.FORGE_LEGACY ? "cpw.mods.fml.common.patcher.ClassPatchManager" : "net.minecraftforge.fml.common.patcher.ClassPatchManager");

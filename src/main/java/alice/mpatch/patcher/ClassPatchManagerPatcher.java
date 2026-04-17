@@ -1,14 +1,13 @@
 package alice.mpatch.patcher;
 
+import alice.Platform;
+import alice.util.BytecodeUtil;
 import org.objectweb.asm.*;
 
-//Why doesn't this f***ing method read the cache?
 public class ClassPatchManagerPatcher implements Opcodes {
     public static byte[] process(byte[] classBytes, String name) {
         String cls = name.substring(0, name.length() - 6);
-        ClassReader cr = new ClassReader(classBytes);
-        ClassWriter cw = new ClassWriter(cr, 0);
-        ClassVisitor cv = new ClassVisitor(ASM5, cw) {
+        return BytecodeUtil.patchClass(classBytes, cw -> new ClassVisitor(Platform.ASM_LEVEL, cw) {
             @Override
             public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
                 MethodVisitor mv = super.visitMethod(access, name, descriptor, signature, exceptions);
@@ -32,15 +31,13 @@ public class ClassPatchManagerPatcher implements Opcodes {
                         }
                     };
                 } else if ("applyPatch".equals(name)) {
-                    mv.visitVarInsn(ALOAD,3);
+                    mv.visitVarInsn(ALOAD, 3);
                     mv.visitInsn(ARETURN);
-                    mv.visitMaxs(1,4);
-                    return super.visitMethod(access,"trueApplyPatch",descriptor,signature,exceptions);
+                    mv.visitMaxs(1, 4);
+                    return super.visitMethod(access, "trueApplyPatch", descriptor, signature, exceptions);
                 }
                 return mv;
             }
-        };
-        cr.accept(cv, ClassReader.SKIP_DEBUG);
-        return cw.toByteArray();
+        });
     }
 }
