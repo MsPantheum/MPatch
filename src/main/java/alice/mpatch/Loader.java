@@ -1,14 +1,13 @@
 package alice.mpatch;
 
-import alice.Platform;
 import alice.api.ClassByteProcessor;
 import alice.injector.ClassPatcher;
 import alice.log.Logger;
+import alice.mpatch.game.deobfusction.DeobfuscationManager;
 import alice.mpatch.patcher.ClassPatchManagerPatcher;
 import alice.mpatch.patcher.FMLClassPatcher;
 import alice.mpatch.patcher.LaunchClassLoaderPatcher;
 import alice.mpatch.patcher.QuiltBasePathPatcher;
-import alice.util.BytecodeUtil;
 import alice.util.ClassUtil;
 import org.objectweb.asm.*;
 
@@ -22,7 +21,7 @@ public class Loader implements Opcodes {
                 boolean eol = false;
 
                 @Override
-                public byte[] process(byte[] classBytes, String name) {
+                public byte[] processChecked(byte[] classBytes, String name) {
                     if ("net/minecraft/launchwrapper/LaunchClassLoader.class".equals(name)) {
                         eol = true;
                         return LaunchClassLoaderPatcher.transform(classBytes);
@@ -53,7 +52,7 @@ public class Loader implements Opcodes {
                 boolean eol = false;
 
                 @Override
-                public byte[] process(byte[] classBytes, String name) {
+                public byte[] processChecked(byte[] classBytes, String name) {
                     if ("net/minecraftforge/fml/common/patcher/ClassPatchManager.class".equals(name) || "cpw/mods/fml/common/patcher/ClassPatchManager.class".equals(name)) {
                         eol = true;
                         return ClassPatchManagerPatcher.process(classBytes, name);
@@ -73,7 +72,7 @@ public class Loader implements Opcodes {
                 boolean eol = false;
 
                 @Override
-                public byte[] process(byte[] classBytes, String name) {
+                public byte[] processChecked(byte[] classBytes, String name) {
                     if ("org/quiltmc/loader/impl/filesystem/QuiltBasePath.class".equals(name)) {
                         eol = true;
                         return QuiltBasePathPatcher.transform(classBytes);
@@ -87,6 +86,7 @@ public class Loader implements Opcodes {
                 }
             });
         }
+        DeobfuscationManager.init();
         Logger.MAIN.info("MPatch loading completed.");
     }
 }

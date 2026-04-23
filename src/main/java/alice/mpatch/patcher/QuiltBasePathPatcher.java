@@ -21,12 +21,6 @@ public class QuiltBasePathPatcher implements Opcodes {
                     return new MethodVisitor(Platform.ASM_LEVEL, mv) {
 
                         @Override
-                        public void visitFrame(int type, int numLocal, Object[] local, int numStack, Object[] stack) {
-                            System.out.println(Arrays.toString(stack));
-                            super.visitFrame(type, numLocal, local, numStack, stack);
-                        }
-
-                        @Override
                         public void visitInsn(int opcode) {
                             if (opcode == ARETURN) {
 

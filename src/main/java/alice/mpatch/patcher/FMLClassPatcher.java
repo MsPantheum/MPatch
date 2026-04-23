@@ -55,9 +55,7 @@ public class FMLClassPatcher {
         if (START_PATCHING) {
             try {
                 classBytes = (byte[]) applyPatch.invoke(untransformed_name, transformed_name, classBytes);
-            } catch (Throwable e) {
-                throw new RuntimeException(e);
-            }
+            } catch (Throwable ignored) {}
         }
         return classBytes;
     }
