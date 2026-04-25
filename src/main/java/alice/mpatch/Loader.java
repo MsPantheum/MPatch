@@ -11,8 +11,9 @@ import alice.mpatch.patcher.QuiltBasePathPatcher;
 import alice.util.ClassUtil;
 import org.objectweb.asm.*;
 
+@SuppressWarnings("unused")
 public class Loader implements Opcodes {
-    public static void load() {
+    public static void load(String[] args) {
         Logger.MAIN.info("MPatch loading...");
         ClassPatcher.addProtectedJar(ClassUtil.getJarPath(Loader.class));
         if (Environment.LAUNCHWRAPPER) {
@@ -65,6 +66,7 @@ public class Loader implements Opcodes {
                     return eol;
                 }
             });
+            ClassPatcher.registerProvider(name -> FMLClassPatcher.transform(null, name));
         }
         if (Environment.QUILT) {
             ClassPatcher.registerProcessor(new ClassByteProcessor() {
@@ -86,7 +88,7 @@ public class Loader implements Opcodes {
                 }
             });
         }
-        DeobfuscationManager.init();
+        DeobfuscationManager.init(args);
         Logger.MAIN.info("MPatch loading completed.");
     }
 }
