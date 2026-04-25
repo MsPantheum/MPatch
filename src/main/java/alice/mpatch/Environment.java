@@ -29,6 +29,7 @@ public class Environment {
     public static final boolean FABRIC;
     public static final boolean QUILT;
     public static final boolean VANILLA;
+    public static final boolean CLEANROOM;
     public static final String MC_VERSION;
 
     static {
@@ -90,6 +91,13 @@ public class Environment {
             tmp = false;
         }
         QUILT = tmp;
+        try {
+            Class.forName("top.outlands.foundation.boot.Foundation");
+            tmp = true;
+        } catch (ClassNotFoundException e) {
+            tmp = false;
+        }
+        CLEANROOM = tmp;
         final String[] tmp_str = {null};
         if (System.getProperty("mpatch.mc_version") != null) {
             tmp_str[0] = System.getProperty("mpatch.mc_version");
@@ -138,7 +146,7 @@ public class Environment {
             throw new IllegalStateException("Failed to get Minecraft version!");
         }
         MC_VERSION = tmp_str[0];
-        VANILLA = !FORGE && !FORGE_LEGACY && !FABRIC && !QUILT;
+        VANILLA = !FORGE && !FORGE_LEGACY && !FABRIC && !QUILT && !MODLAUNCHER;
         Logger.MAIN.info("Minecraft version is ".concat(MC_VERSION).concat("."));
         Logger.MAIN.info("Environment checked.");
     }
