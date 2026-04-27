@@ -46,6 +46,9 @@ public class ClassPatchManagerPatcher implements Opcodes {
                         @Override
                         public void visitInsn(int opcode) {
                             if (delete) {
+                                if (opcode == ATHROW) {
+                                    delete = false;
+                                }
                                 return;
                             }
                             super.visitInsn(opcode);
@@ -109,6 +112,11 @@ public class ClassPatchManagerPatcher implements Opcodes {
 
                         @Override
                         public void visitLdcInsn(Object value) {
+                            if (value.equals("Patcher expecting non-empty class data file for {}, but received empty.")) {
+                                delete = true;
+                                super.visitInsn(POP);
+                                return;
+                            }
                             if (delete) {
                                 return;
                             }
@@ -157,16 +165,6 @@ public class ClassPatchManagerPatcher implements Opcodes {
                                 super.visitInsn(ACONST_NULL);
                                 super.visitInsn(ARETURN);
                             }
-                        }
-
-                        @Override
-                        public void visitLineNumber(int line, Label start) {
-                            if (line == 113) {
-                                delete = true;
-                            } else if (line == 118) {
-                                delete = false;
-                            }
-                            super.visitLineNumber(line, start);
                         }
                     } : neo_mv;
                 }

@@ -36,7 +36,7 @@ public class Environment {
         Logger.MAIN.info("Checking environment...");
         boolean tmp;
         try {
-            Class.forName("net.minecraft.launchwrapper.IClassTransformer", false, ClassLoader.getSystemClassLoader());
+            Class.forName("net.minecraft.launchwrapper.Launch", false, ClassLoader.getSystemClassLoader());
             Logger.MAIN.info("LaunchWrapper detected.");
             tmp = true;
         } catch (ClassNotFoundException e) {
@@ -93,6 +93,7 @@ public class Environment {
         QUILT = tmp;
         try {
             Class.forName("top.outlands.foundation.boot.Foundation");
+            Logger.MAIN.info("Cleanroom detected.");
             tmp = true;
         } catch (ClassNotFoundException e) {
             tmp = false;

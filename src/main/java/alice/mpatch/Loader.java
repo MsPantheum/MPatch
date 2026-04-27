@@ -8,14 +8,14 @@ import alice.mpatch.patcher.ClassPatchManagerPatcher;
 import alice.mpatch.patcher.FMLClassPatcher;
 import alice.mpatch.patcher.LaunchClassLoaderPatcher;
 import alice.mpatch.patcher.QuiltBasePathPatcher;
-import alice.util.ClassUtil;
+import alice.util.FileUtil;
 import org.objectweb.asm.*;
 
 @SuppressWarnings("unused")
 public class Loader implements Opcodes {
     public static void load(String[] args) {
         Logger.MAIN.info("MPatch loading...");
-        ClassPatcher.addProtectedJar(ClassUtil.getJarPath(Loader.class));
+        ClassPatcher.addProtectedJar(FileUtil.getJarPath(Loader.class));
         if (Environment.LAUNCHWRAPPER) {
             ClassPatcher.registerProcessor(new ClassByteProcessor() {
 
@@ -23,9 +23,9 @@ public class Loader implements Opcodes {
 
                 @Override
                 public byte[] processChecked(byte[] classBytes, String name) {
-                    if ("net/minecraft/launchwrapper/LaunchClassLoader.class".equals(name)) {
+                    if ((Environment.CLEANROOM ? "top/outlands/foundation/TransformerDelegate.class" : "net/minecraft/launchwrapper/LaunchClassLoader.class").equals(name)) {
                         eol = true;
-                        return LaunchClassLoaderPatcher.transform(classBytes);
+                        return LaunchClassLoaderPatcher.transform(classBytes,name);
                     }
                     return classBytes;
                 }

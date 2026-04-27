@@ -4,24 +4,33 @@ import alice.log.Logger;
 import alice.mpatch.Environment;
 import alice.util.ReflectionUtil;
 import alice.util.Unsafe;
-import net.minecraft.launchwrapper.IClassNameTransformer;
-import net.minecraft.launchwrapper.IClassTransformer;
 import net.minecraft.launchwrapper.Launch;
 
 import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
 import java.lang.reflect.Field;
 
 public class FMLClassPatcher {
 
+    private static boolean START_DEOBFUSCATION;
     private static boolean START_PATCHING;
-    private static IClassNameTransformer FML_DEOBFUSCATING_TRANSFORMER;
     private static MethodHandle applyPatch;
+    private static MethodHandle map;
+    private static MethodHandle unmap;
 
-    public static void setFmlDeobfuscatingTransformer(IClassNameTransformer transformer) {
-        Logger.MAIN.info("Get FML_DEOBFUSCATING_TRANSFORMER.");
-        FML_DEOBFUSCATING_TRANSFORMER = transformer;
-        assert FML_DEOBFUSCATING_TRANSFORMER instanceof IClassTransformer;
+    public static void startDeobfuscation() {
+        Logger.MAIN.info("FML deobfuscation started.");
+        try {
+            Class<?> remapper = Class.forName(Environment.FORGE_LEGACY ? "cpw.mods.fml.common.asm.transformers.deobf.FMLDeobfuscatingRemapper" : "net.minecraftforge.fml.common.asm.transformers.deobf.FMLDeobfuscatingRemapper", true, Launch.classLoader);
+            MethodHandles.Lookup lookup = ReflectionUtil.lookup();
+            Object REMAPPER = remapper.getDeclaredField("INSTANCE").get(null);
+            map = lookup.findVirtual(remapper, "map", MethodType.methodType(String.class, String.class)).bindTo(REMAPPER);
+            unmap = lookup.findVirtual(remapper, "unmap", MethodType.methodType(String.class, String.class)).bindTo(REMAPPER);
+            START_DEOBFUSCATION = true;
+        } catch (ClassNotFoundException | NoSuchMethodException | IllegalAccessException | NoSuchFieldException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     public static void startPatching() {
@@ -39,23 +48,25 @@ public class FMLClassPatcher {
             throw new RuntimeException(e);
         }
         Field f = ReflectionUtil.getField(cls, "INSTANCE");
-        applyPatch = ReflectionUtil.findVirtual(cls, "trueApplyPatch", MethodType.methodType(byte[].class, String.class, String.class, byte[].class))
-                .bindTo(Unsafe.getObject(Unsafe.staticFieldBase(f), Unsafe.staticFieldOffset(f)));
+        applyPatch = ReflectionUtil.findVirtual(cls, "trueApplyPatch", MethodType.methodType(byte[].class, String.class, String.class, byte[].class)).bindTo(Unsafe.getObject(Unsafe.staticFieldBase(f), Unsafe.staticFieldOffset(f)));
         START_PATCHING = true;
     }
 
     public static byte[] transform(byte[] classBytes, String name) {
-        String j_name = name.substring(0, name.length() - 6).replace("/", ".");
+        String _name = name.substring(0, name.length() - 6);
+        String j_name = _name.replace("/", ".");
         String untransformed_name = j_name;
         String transformed_name = j_name;
-        if (FML_DEOBFUSCATING_TRANSFORMER != null) {
-            untransformed_name = FML_DEOBFUSCATING_TRANSFORMER.unmapClassName(j_name);
-            transformed_name = FML_DEOBFUSCATING_TRANSFORMER.remapClassName(j_name);
-        }
-        if (START_PATCHING) {
-            try {
+        try {
+            if (START_DEOBFUSCATION) {
+                untransformed_name = ((String) unmap.invoke(_name)).replace("/", ".");
+                transformed_name = ((String) map.invoke(_name)).replace("/", ".");
+            }
+            if (START_PATCHING) {
                 classBytes = (byte[]) applyPatch.invoke(untransformed_name, transformed_name, classBytes);
-            } catch (Throwable ignored) {}
+            }
+        } catch (Throwable ignored) {
+
         }
         return classBytes;
     }
