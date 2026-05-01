@@ -3,19 +3,22 @@ package alice.mpatch;
 import alice.api.ClassByteProcessor;
 import alice.injector.ClassPatcher;
 import alice.log.Logger;
+import alice.mpatch.game.Side;
 import alice.mpatch.game.deobfusction.DeobfuscationManager;
-import alice.mpatch.patcher.ClassPatchManagerPatcher;
-import alice.mpatch.patcher.FMLClassPatcher;
-import alice.mpatch.patcher.LaunchClassLoaderPatcher;
-import alice.mpatch.patcher.QuiltBasePathPatcher;
+import alice.mpatch.patcher.*;
 import alice.util.FileUtil;
 import org.objectweb.asm.*;
 
+import java.util.Arrays;
+
 @SuppressWarnings("unused")
 public class Loader implements Opcodes {
+
     public static void load(String[] args) {
         Logger.MAIN.info("MPatch loading...");
         ClassPatcher.addProtectedJar(FileUtil.getJarPath(Loader.class));
+        Environment.args = args;
+        Environment.SIDE = Arrays.asList(args).contains("--accessToken") ? Side.CLIENT : Side.SERVER;
         if (Environment.LAUNCHWRAPPER) {
             ClassPatcher.registerProcessor(new ClassByteProcessor() {
 
@@ -25,7 +28,7 @@ public class Loader implements Opcodes {
                 public byte[] processChecked(byte[] classBytes, String name) {
                     if ((Environment.CLEANROOM ? "top/outlands/foundation/TransformerDelegate.class" : "net/minecraft/launchwrapper/LaunchClassLoader.class").equals(name)) {
                         eol = true;
-                        return LaunchClassLoaderPatcher.transform(classBytes,name);
+                        return LaunchClassLoaderPatcher.transform(classBytes, name);
                     }
                     return classBytes;
                 }
@@ -89,6 +92,7 @@ public class Loader implements Opcodes {
             });
         }
         DeobfuscationManager.init(args);
+        DeobfuscationManager.test();
         Logger.MAIN.info("MPatch loading completed.");
     }
 }

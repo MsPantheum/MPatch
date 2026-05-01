@@ -1,6 +1,7 @@
 package alice.mpatch;
 
 import alice.log.Logger;
+import alice.mpatch.game.Side;
 import alice.util.FileUtil;
 import alice.util.IOUtil;
 import org.json.JSONArray;
@@ -17,9 +18,12 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 /**
- * Provides environment information like the game version and whether there are other mod loaders.<br>Note that Optifine isn't count as a mod loader.
+ * Provides environment information like the game version and whether there are other mod loaders.<br>Note that Optifine isn't counted as a mod loader.
  */
 public class Environment {
+
+    public static String[] args;
+    public static Side SIDE;
 
     public static final boolean LAUNCHWRAPPER;
     public static final boolean MODLAUNCHER;
@@ -31,6 +35,7 @@ public class Environment {
     public static final boolean VANILLA;
     public static final boolean CLEANROOM;
     public static final String MC_VERSION;
+    public static final Path VERSION_DIRECTORY;
 
     static {
         Logger.MAIN.info("Checking environment...");
@@ -102,48 +107,50 @@ public class Environment {
         final String[] tmp_str = {null};
         if (System.getProperty("mpatch.mc_version") != null) {
             tmp_str[0] = System.getProperty("mpatch.mc_version");
-        } else {
-            Path path = FileUtil.WORKING_DIR;
-            if (FileUtil.isDirectory(path.resolve("versions"))) {
-                path = path.resolve("versions");
-                String[] classpath = System.getProperty("java.class.path").split(File.pathSeparator);
-                final String s = path.toString();
-                Optional<String> location = Arrays.stream(classpath).filter(p -> p.contains(s)).findFirst();
-                if (location.isPresent()) {
-                    path = Paths.get(location.get()).getParent();
-                    String client_jar = location.get();
-                    try (ZipFile zip = new ZipFile(client_jar)) {
-                        ZipEntry entry = zip.getEntry("version.json");
-                        if (entry != null) {
-                            InputStream is = zip.getInputStream(entry);
-                            byte[] version_json = IOUtil.getByteArray(is);
-                            String json_string = new String(version_json);
-                            JSONObject json = new JSONObject(json_string);
-                            tmp_str[0] = json.getString("id");
-                        }
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
+        }
+        Path path = FileUtil.WORKING_DIR;
+        if (FileUtil.isDirectory(path.resolve("versions"))) {
+            path = path.resolve("versions");
+        }
+        String[] classpath = System.getProperty("java.class.path").split(File.pathSeparator);
+        final String s = path.toString();
+        Optional<String> location = Arrays.stream(classpath).filter(p -> p.contains(s)).findFirst();
+        if (location.isPresent()) {
+            path = Paths.get(location.get()).getParent();
+            VERSION_DIRECTORY = path;
+            if (tmp_str[0] == null) {
+                String client_jar = location.get();
+                try (ZipFile zip = new ZipFile(client_jar)) {
+                    ZipEntry entry = zip.getEntry("version.json");
+                    if (entry != null) {
+                        InputStream is = zip.getInputStream(entry);
+                        byte[] version_json = IOUtil.getByteArray(is);
+                        String json_string = new String(version_json);
+                        JSONObject json = new JSONObject(json_string);
+                        tmp_str[0] = json.getString("id");
                     }
-                } else {
-                    Logger.MAIN.warn("Failed to locate versions directory.");
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
                 }
             }
-            if (tmp_str[0] == null) {
-                Path version_json = path.resolve(path.getFileName().toString() + ".json");
-                String json_string = new String(FileUtil.read(version_json));
-                JSONObject json = new JSONObject(json_string);
-                JSONArray patches = json.getJSONArray("patches");
-                patches.forEach(o -> {
-                    if(o instanceof JSONObject) {
-                        JSONObject patch = (JSONObject) o;
-                        if(patch.getString("id").equals("game")){
-                            tmp_str[0] = patch.getString("version");
-                        }
-                    }
-                });
-            }
+        } else {
+            throw new IllegalStateException("Failed to locate versions directory.");
         }
-        if(tmp_str[0] == null) {
+        if (tmp_str[0] == null) {
+            Path version_json = path.resolve(path.getFileName().toString() + ".json");
+            String json_string = new String(FileUtil.read(version_json));
+            JSONObject json = new JSONObject(json_string);
+            JSONArray patches = json.getJSONArray("patches");
+            patches.forEach(o -> {
+                if (o instanceof JSONObject) {
+                    JSONObject patch = (JSONObject) o;
+                    if (patch.getString("id").equals("game")) {
+                        tmp_str[0] = patch.getString("version");
+                    }
+                }
+            });
+        }
+        if (tmp_str[0] == null) {
             throw new IllegalStateException("Failed to get Minecraft version!");
         }
         MC_VERSION = tmp_str[0];

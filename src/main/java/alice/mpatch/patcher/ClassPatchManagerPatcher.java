@@ -10,7 +10,7 @@ public class ClassPatchManagerPatcher implements Opcodes {
         String cls = name.substring(0, name.length() - 6);
         return BytecodeUtil.patchClass(classBytes, cw -> new ClassVisitor(Platform.ASM_LEVEL, cw) {
 
-            boolean flag = Environment.FORGE;
+            final boolean flag = Environment.FORGE;
 
             @Override
             public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
