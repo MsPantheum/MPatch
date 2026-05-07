@@ -31,10 +31,12 @@ public class Environment {
     public static final boolean FORGE;
     public static final boolean OPTIFINE;
     public static final boolean FABRIC;
+    public static final boolean FABRIC_LEGACY;
     public static final boolean QUILT;
     public static final boolean VANILLA;
     public static final boolean CLEANROOM;
     public static final String MC_VERSION;
+    public static final int MC_MAJOR_VERSION;
     public static final Path VERSION_DIRECTORY;
 
     static {
@@ -154,8 +156,15 @@ public class Environment {
             throw new IllegalStateException("Failed to get Minecraft version!");
         }
         MC_VERSION = tmp_str[0];
+        MC_MAJOR_VERSION = Integer.parseInt(MC_VERSION.startsWith("1.") ? MC_VERSION.substring(MC_VERSION.indexOf('.') + 1, MC_VERSION.lastIndexOf('.')) : MC_VERSION.substring(0, MC_VERSION.indexOf('.')));
         VANILLA = !FORGE && !FORGE_LEGACY && !FABRIC && !QUILT && !MODLAUNCHER;
         Logger.MAIN.info("Minecraft version is ".concat(MC_VERSION).concat("."));
+        if (MC_MAJOR_VERSION < 14 && FABRIC) {
+            FABRIC_LEGACY = true;
+            Logger.MAIN.info("Fabric legacy detected.");
+        } else {
+            FABRIC_LEGACY = false;
+        }
         Logger.MAIN.info("Environment checked.");
     }
 }

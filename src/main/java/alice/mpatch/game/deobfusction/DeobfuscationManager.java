@@ -21,7 +21,6 @@ import javax.xml.parsers.SAXParser;
 import javax.xml.parsers.SAXParserFactory;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -29,7 +28,6 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.zip.ZipEntry;
-import java.util.zip.ZipException;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
 
@@ -44,110 +42,186 @@ public class DeobfuscationManager {
     private static final Map<String, BiMap<String, String>> fieldMappings = new HashMap<>();
     private static final Map<String, BiMap<ImmutablePair<String, String>, ImmutablePair<String, String>>> methodMappings = new HashMap<>();
 
+    private static boolean MCP_USE_OFFICIAL = false;
+
     public enum DeobfuscationType {
         OFFICIAL, YARN, MCP,
     }
 
-    public static void init(String[] args) {
-        Logger.MAIN.info("DeobfuscationManager loading...");
-        String raw_mappings = null;
-        if (Environment.VANILLA) {
-            //TYPE = DeobfuscationType.NONE;
-            Path VERSION_DIRECTORY = Environment.VERSION_DIRECTORY;
-            Path version_json = VERSION_DIRECTORY.resolve(VERSION_DIRECTORY.getFileName().toString().concat(".json"));
-            JSONObject json = new JSONObject(new String(FileUtil.read(version_json)));
-            if (json.has("downloads")) {
-                json = json.getJSONObject("downloads");
-                String element_name = Environment.SIDE.isClient() ? "client_mappings" : "server_mappings";
-                if (json.has(element_name)) {
-                    json = json.getJSONObject(element_name);
-                    TYPE = DeobfuscationType.OFFICIAL;
-                    try {
-                        URL url = new URL(json.getString("url"));
-                        Logger.MAIN.info("Downloading official mappings from ".concat(url.toString()));
-                        raw_mappings = new String(IOUtil.readURL(url));
-                    } catch (IOException e) {
-                        throw new RuntimeException(e);
+    public static String searchClass(String... targets) {
+        for (String target : targets) {
+            if (classMappings.containsValue(target)) {
+                return target;
+            }
+        }
+        return null;
+    }
+
+    public static String searchField(String clazz, String... targets) {
+        BiMap<String, String> fields = fieldMappings.get(unmapClass(clazz));
+        if (fields == null) {
+            return null;
+        }
+        for (String target : targets) {
+            if (fields.containsValue(target)) {
+                return target;
+            }
+        }
+        return null;
+    }
+
+    public static ImmutablePair<String, String> searchMethod(String clazz, String... targets) {
+        BiMap<ImmutablePair<String, String>, ImmutablePair<String, String>> methods = methodMappings.get(unmapClass(clazz));
+        if (methods == null) {
+            return null;
+        }
+        for (ImmutablePair<String, String> value : methods.values()) {
+            for (String s : targets) {
+                if (value.getLeft().equals(s)) {
+                    return value;
+                }
+            }
+        }
+        return null;
+    }
+
+    @SafeVarargs
+    public static ImmutablePair<String, String> searchMethod(String clazz, ImmutablePair<String, String>... targets) {
+        BiMap<ImmutablePair<String, String>, ImmutablePair<String, String>> methods = methodMappings.get(unmapClass(clazz));
+        if (methods == null) {
+            return null;
+        }
+        for (ImmutablePair<String, String> value : methods.values()) {
+            for (ImmutablePair<String, String> target : targets) {
+                if (target.equals(value)) {
+                    return target;
+                }
+            }
+        }
+        return null;
+    }
+
+    private static String downloadMCP() throws IOException, ParserConfigurationException, SAXException {
+        URL url = new URL("https://maven.neoforged.net/releases/de/oceanlabs/mcp/mcp_config/maven-metadata.xml");
+        Logger.MAIN.info("Downloading mcp maven metadata from ".concat(url.toString()).concat("."));
+        SAXParser parser = SAXParserFactory.newInstance().newSAXParser();
+        String version = Environment.MC_VERSION;
+        final boolean[] exist = {false};
+        parser.parse(url.openStream(), new DefaultHandler() {
+
+            String current;
+
+            @Override
+            public void startElement(String uri, String localName, String qName, Attributes attributes) {
+                current = qName;
+                String id = attributes.getValue("id");
+                if (id != null) System.out.println("ID: " + id);
+            }
+
+            @Override
+            public void characters(char[] ch, int start, int length) {
+                if ("version".equals(current)) {
+                    String data = new String(ch, start, length).trim();
+                    if (!data.isEmpty()) {
+                        if (data.equals(version)) {
+                            exist[0] = true;
+                        }
                     }
                 }
             }
+        });
+        String ret = null;
+        if (exist[0]) {
+            TYPE = DeobfuscationType.MCP;
+            url = new URL("https://maven.neoforged.net/releases/de/oceanlabs/mcp/mcp_config/".concat(version).concat("/mcp_config-").concat(version).concat(".zip"));
+            Logger.MAIN.info("Downloading mcp from ".concat(url.toString()).concat("."));
+            boolean finished = false;
+            try (ZipInputStream zis = new ZipInputStream(url.openStream())) {
+                ZipEntry entry = zis.getNextEntry();
+                while (entry != null) {
+                    if (entry.getName().equals("config/joined.tsrg")) {
+                        ret = new String(IOUtil.getByteArray(zis));
+                        if (finished) {
+                            break;
+                        } else {
+                            finished = true;
+                        }
+                    } else if (entry.getName().equals("config.json")) {
+                        JSONObject json = new JSONObject(new String(IOUtil.getByteArray(zis)));
+                        if (json.has("official")) {
+                            MCP_USE_OFFICIAL = json.getBoolean("official");
+                        }
+                        if (finished) {
+                            break;
+                        } else {
+                            finished = true;
+                        }
+                    }
+                    entry = zis.getNextEntry();
+                }
+            }
+        } else {
+            url = new URL("https://maven.minecraftforge.net/de/oceanlabs/mcp/mcp/".concat(version).concat("/mcp-").concat(version).concat("-srg.zip"));
+            Logger.MAIN.info("Trying to download mcp from ".concat(url.toString()).concat("."));
+            try (ZipInputStream zis = new ZipInputStream(url.openStream())) {
+                ZipEntry entry = zis.getNextEntry();
+                while (entry != null) {
+                    if (entry.getName().equals("joined.srg")) {
+                        TYPE = DeobfuscationType.MCP;
+                        ret = new String(IOUtil.getByteArray(zis));
+                        break;
+                    }
+                    entry = zis.getNextEntry();
+                }
+            } catch (FileNotFoundException e) {
+                throw new BadEnvironment("We can't find deobfucation mappings for your version:".concat(version));
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
+        }
+        return ret;
+    }
+
+    private static String downloadOfficial() {
+        Path VERSION_DIRECTORY = Environment.VERSION_DIRECTORY;
+        Path version_json = VERSION_DIRECTORY.resolve(VERSION_DIRECTORY.getFileName().toString().concat(".json"));
+        JSONObject json = new JSONObject(new String(FileUtil.read(version_json)));
+        if (json.has("downloads")) {
+            json = json.getJSONObject("downloads");
+            String element_name = Environment.SIDE.isClient() ? "client_mappings" : "server_mappings";
+            if (json.has(element_name)) {
+                json = json.getJSONObject(element_name);
+                TYPE = DeobfuscationType.OFFICIAL;
+                try {
+                    URL url = new URL(json.getString("url"));
+                    Logger.MAIN.info("Downloading official mappings from ".concat(url.toString()));
+                    return new String(IOUtil.readURL(url));
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }
+        return null;
+    }
+
+    public static void init(String[] args) {
+        Logger.MAIN.info("DeobfuscationManager loading...");
+        String raw_mappings;
+        if (Environment.VANILLA) {
+            raw_mappings = downloadOfficial();
             if (raw_mappings == null) {
                 try {
-                    URL url = new URL("https://maven.neoforged.net/releases/de/oceanlabs/mcp/mcp_config/maven-metadata.xml");
-                    Logger.MAIN.info("Downloading mcp maven metadata from ".concat(url.toString()).concat("."));
-                    SAXParser parser = SAXParserFactory.newInstance().newSAXParser();
-                    String version = Environment.MC_VERSION;
-                    final boolean[] exist = {false};
-                    parser.parse(url.openStream(), new DefaultHandler() {
-
-                        String current;
-
-                        @Override
-                        public void startElement(String uri, String localName, String qName, Attributes attributes) {
-                            current = qName;
-                            String id = attributes.getValue("id");
-                            if (id != null) System.out.println("ID: " + id);
-                        }
-
-                        @Override
-                        public void characters(char[] ch, int start, int length) {
-                            if ("version".equals(current)) {
-                                String data = new String(ch, start, length).trim();
-                                if (!data.isEmpty()) {
-                                    if (data.equals(version)) {
-                                        exist[0] = true;
-                                    }
-                                }
-                            }
-                        }
-                    });
-                    if (exist[0]) {
-                        TYPE = DeobfuscationType.MCP;
-                        url = new URL("https://maven.neoforged.net/releases/de/oceanlabs/mcp/mcp_config/".concat(version).concat("/mcp_config-").concat(version).concat(".zip"));
-                        Logger.MAIN.info("Downloading mcp from ".concat(url.toString()).concat("."));
-                        try (ZipInputStream zis = new ZipInputStream(url.openStream())) {
-                            ZipEntry entry = zis.getNextEntry();
-                            while (entry != null) {
-                                if (entry.getName().equals("config/joined.tsrg")) {
-                                    raw_mappings = new String(IOUtil.getByteArray(zis));
-                                    break;
-                                }
-                                entry = zis.getNextEntry();
-                            }
-                        }
-                        if (raw_mappings != null) {
-                            parseTsrg(raw_mappings);
-                        } else {
-                            throw new ShouldNotReachHere();
-                        }
+                    raw_mappings = downloadMCP();
+                    if (raw_mappings != null) {
+                        parseMappings(raw_mappings, MCP_USE_OFFICIAL);
                     } else {
-                        url = new URL("https://maven.minecraftforge.net/de/oceanlabs/mcp/mcp/".concat(version).concat("/mcp-").concat(version).concat("-srg.zip"));
-                        Logger.MAIN.info("Trying to download mcp from ".concat(url.toString()).concat("."));
-                        try (ZipInputStream zis = new ZipInputStream(url.openStream())) {
-                            ZipEntry entry = zis.getNextEntry();
-                            while (entry != null) {
-                                if (entry.getName().equals("joined.srg")) {
-                                    TYPE = DeobfuscationType.MCP;
-                                    raw_mappings = new String(IOUtil.getByteArray(zis));
-                                    break;
-                                }
-                                entry = zis.getNextEntry();
-                            }
-                        } catch (FileNotFoundException e) {
-                            throw new BadEnvironment("We can't find deobfucation mappings for your version:".concat(version));
-                        } catch (IOException e) {
-                            throw new RuntimeException(e);
-                        }
-                        if (raw_mappings == null) {
-                            throw new BadEnvironment("We can't find deobfucation mappings for your version:".concat(version));
-                        }
-                        parseMappings(raw_mappings);
+                        throw new IllegalStateException();
                     }
                 } catch (IOException | ParserConfigurationException | SAXException e) {
                     throw new RuntimeException(e);
                 }
             } else {
-                parseMappings(raw_mappings);
+                parseMappings(raw_mappings, false);
             }
         } else if (Environment.FABRIC || Environment.QUILT) {
             TYPE = DeobfuscationType.YARN;
@@ -155,7 +229,7 @@ public class DeobfuscationManager {
             if (url != null) {
                 try {
                     raw_mappings = new String(IOUtil.readURL(url));
-                    parseMappings(raw_mappings);
+                    parseMappings(raw_mappings, false);
                 } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
@@ -169,7 +243,7 @@ public class DeobfuscationManager {
                 try {
                     LZMACompressorInputStream is = new LZMACompressorInputStream(url.openStream());
                     raw_mappings = new String(IOUtil.getByteArray(is));
-                    parseMappings(raw_mappings);
+                    parseMappings(raw_mappings, false);
                 } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
@@ -198,16 +272,20 @@ public class DeobfuscationManager {
                 String name = Environment.MC_VERSION.concat("-").concat(mcp_version);
                 path = path.resolve("de").resolve("oceanlabs").resolve("mcp").resolve("mcp_config").resolve(name).resolve("mcp_config-".concat(name).concat(".zip"));
                 if (!FileUtil.exists(path)) {
-                    System.out.println(path.toString());
                     throw new IllegalStateException("Cannot find deobfuscation file!");
                 }
                 try (ZipFile file = new ZipFile(path.toFile())) {
                     ZipEntry entry = file.getEntry("config/joined.tsrg");
                     raw_mappings = new String(IOUtil.getByteArray(file.getInputStream(entry)));
+                    entry = file.getEntry("config.json");
+                    JSONObject json = new JSONObject(new String(IOUtil.getByteArray(file.getInputStream(entry))));
+                    if (json.has("official")) {
+                        MCP_USE_OFFICIAL = json.getBoolean("official");
+                    }
                 } catch (IOException e) {
                     throw new RuntimeException(e);
                 }
-                parseMappings(raw_mappings);
+                parseMappings(raw_mappings, MCP_USE_OFFICIAL);
             } else {
                 throw new IllegalStateException();
             }
@@ -215,7 +293,7 @@ public class DeobfuscationManager {
             TYPE = DeobfuscationType.MCP;
             try {
                 raw_mappings = new String(IOUtil.readURL(Objects.requireNonNull(ClassLoader.getSystemClassLoader().getResource("deobf_data-1.12.2.tsrg"))));
-                parseMappings(raw_mappings);
+                parseMappings(raw_mappings, false);
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }
@@ -234,7 +312,7 @@ public class DeobfuscationManager {
         Logger.MAIN.info("DeobfuscationManager loaded.");
     }
 
-    private static void parseMappings(String raw_mappings) {
+    private static void parseMappings(String raw_mappings, boolean useOfficial) {
         if (SAVE_RAW_MAPPINGS) {
             FileUtil.write("raw_mappings", raw_mappings.getBytes(StandardCharsets.UTF_8));
         }
@@ -243,7 +321,7 @@ public class DeobfuscationManager {
                 if (raw_mappings.startsWith("PK:") || raw_mappings.startsWith("CL:") || raw_mappings.startsWith("FD:") || raw_mappings.startsWith("MD:")) {
                     parseForgeMappings(raw_mappings);
                 } else {
-                    parseTsrg(raw_mappings);
+                    parseTsrg(raw_mappings, useOfficial);
                 }
                 break;
             }
@@ -322,9 +400,10 @@ public class DeobfuscationManager {
 
     private static void parseOfficialMappings(String rawMappings) {
         //TODO
+        throw new IllegalStateException("Unsupported yet");
     }
 
-    private static void parseTsrg(String raw_mappings) {
+    private static void parseTsrg(String raw_mappings, boolean useOfficial) {
         String[] mappings = raw_mappings.split("\n");
         String current_class = null;
         for (int i = 1; i < mappings.length; i++) {
@@ -334,9 +413,11 @@ public class DeobfuscationManager {
             }
             String[] split;
             if (!mapping.startsWith("\t")) {
-                split = mapping.split(" ");
-                current_class = split[0];
-                classMappings.put(split[0], split[1]);
+                if (!useOfficial) {
+                    split = mapping.split(" ");
+                    current_class = split[0];
+                    classMappings.put(split[0], split[1]);
+                }
             } else {
                 mapping = mapping.substring(1);
                 split = mapping.split(" ");
@@ -348,11 +429,26 @@ public class DeobfuscationManager {
                 }
             }
         }
+        if (useOfficial) {
+            String official = downloadOfficial();
+            if (official == null) {
+                throw new IllegalStateException();
+            }
+            String[] lines = official.split("\n");
+            for (String line : lines) {
+                if (line.startsWith("#") || line.startsWith(" ")) {
+                    continue;
+                }
+                String mapped = line.substring(0, line.indexOf(' '));
+                String obfuscated = line.substring(line.lastIndexOf(' ') + 1, line.length() - 1);
+                classMappings.put(obfuscated, mapped);
+            }
+        }
     }
 
     private static String convert(Type type) {
         boolean array = type.getSort() == Type.ARRAY;
-        if(type.getSort() == Type.OBJECT || (array && type.getElementType().getSort() == Type.OBJECT)) {
+        if (type.getSort() == Type.OBJECT || (array && type.getElementType().getSort() == Type.OBJECT)) {
             String s = array ? type.getElementType().getInternalName() : type.getInternalName();
             String _try = classMappings.get(s);
             if (_try != null) {
@@ -390,6 +486,14 @@ public class DeobfuscationManager {
         BiMap<ImmutablePair<String, String>, ImmutablePair<String, String>> mappings = methodMappings.get(unmapClass(className));
         if (mappings != null) {
             return mappings.getOrDefault(method, method);
+        }
+        return method;
+    }
+
+    public static ImmutablePair<String, String> unmapMethod(String className, ImmutablePair<String, String> method) {
+        BiMap<ImmutablePair<String, String>, ImmutablePair<String, String>> mappings = methodMappings.get(unmapClass(className));
+        if (mappings != null) {
+            return mappings.inverse().getOrDefault(method, method);
         }
         return method;
     }
